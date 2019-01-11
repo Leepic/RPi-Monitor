@@ -39,11 +39,12 @@
     <div id='topmenu'></div>
 
     <!-- Begin page content -->
-    <div class="container-fluid column-fluid">
-    <ul class="list-group">
-        <li class="list-group-item list-group-item-danger hide" id="message"></li>
-      </ul>
-    <i id="insertionPoint"></i>
+    <div class="list-group-item list-group-item-danger hide" id="message" ></div>
+    <div class="text-info page-title hide" id="pageTitle"></div>
+    <div class="container-fluid column-fluid">    
+         <div id="sortableListGroup" class="list-group">
+           <i id="insertionPoint"></i>
+         </div>
     </div>
 
     <!-- Fixed footer -->
@@ -61,5 +62,6 @@
     <script src="./js/rpimonitor.utils.js" charset="utf-8"></script>
     <script src="./js/rpimonitor.status.js" charset="utf-8"></script>
     <script src="./js/jsqrencode.min.js"></script>
+    <script src="./js/Sortable.1.6.1.min.js"></script>
   </body>
 </html>

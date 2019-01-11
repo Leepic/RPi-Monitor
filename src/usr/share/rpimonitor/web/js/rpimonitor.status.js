@@ -21,11 +21,13 @@ var postProcessCommand=[];
 
 function RowTemplate(id,image,title){
   return ""+
-        "<div class='row row"+id+"'>"+
-          "<div class='Title'><img src='"+image+"' alt='"+title+"'> &nbsp;"+title+"</div>"+
-          "<div class='Text' id='Text"+id+"'><b></b></div>"+
-        "</div>"+
-        "<hr class='row"+id+"'>"
+        "<div data-id='"+id+"' class='row row"+id+" list-group-item' style='border: none'>"+
+          "<hr class='row"+id+"' draggable='false'>"+
+          "<div class='Title' draggable='false'>"+
+            "<img src='"+image+"' alt='"+title+"' class='DragHandle' draggable='false'> &nbsp;"+title+
+          "</div>"+
+          "<div class='Text' id='Text"+id+"' draggable='false'><b></b></div>"+
+        "</div>"
 }
 
 function ActivatePopover(){
@@ -78,7 +80,7 @@ function UpdateStatus () {
 
   })
   .fail(function() {
-      $('#message').html("<span class='glyphicon glyphicon-warning-sign'></span> &nbsp; Can not get information (dynamic.json) from <b>RPi-Monitor</b> server.");
+      $('#message').html("<b>ERROR</b>: Can not get information (dynamic.json) from <b>RPi-Monitor</b> server.");
       $('#message').removeClass('hide');
     });
 
@@ -95,10 +97,17 @@ function ConstructPage()
     activePage=0;
   }
   if ( data.length > 1 ) {
-    $('<h2><p class="text-info">'+data[activePage].name+'</p></h2><hr>').insertBefore("#insertionPoint");
+    $('#pageTitle').html("<h2>" + eval(data[activePage].title) + "</h2>" );
+    $('#pageTitle').removeClass('hide');
   }
   for ( var iloop=0; iloop < data[activePage].content.length; iloop++) {
-    $(RowTemplate(iloop,"img/"+data[activePage].content[iloop].icon,data[activePage].content[iloop].name)).insertBefore("#insertionPoint");
+    if ( typeof data[activePage].content[iloop].title != 'undefined' ){ 
+      title = eval(data[activePage].content[iloop].title)
+    } 
+    else {
+      title = data[activePage].content[iloop].name
+    }
+    $(RowTemplate(iloop,"img/"+data[activePage].content[iloop].icon,title)).insertBefore("#insertionPoint");
     strips=data[activePage].content;
   }
   UpdateStatus();
@@ -165,6 +174,31 @@ $(function () {
     refreshTimerId = setInterval( UpdateStatus , 10000 )
     clockId=setInterval(Tick,1000);
   }
+
+  Sortable.create(sortableListGroup,{ handle: '.DragHandle',
+                                      animation: 150,
+                                      group: "status-row-order",
+                                      store: {
+                                          /**
+                                           * Get the order of elements. Called once during initialization.
+                                           * @param   {Sortable}  sortable
+                                           * @returns {Array}
+                                           */
+                                          get: function (sortable) {
+                                              var order = localStorage.getItem(sortable.options.group.name);
+                                              return order ? order.split('|') : [];
+                                          },
+                                          /**
+                                           * Save the order of elements. Called onEnd (when the item is dropped).
+                                           * @param {Sortable}  sortable
+                                           */
+                                          set: function (sortable) {
+                                              var order = sortable.toArray();
+                                              localStorage.setItem(sortable.options.group.name, order.join('|'));
+                                          }
+                                      } 
+                                    }
+                 );
 
 });
 

@@ -19,7 +19,12 @@ all:
 	@echo " Once environment variable are set, execute: make install"
 	@echo ""
 
-install:
+DOCS_DIR = docs
+.PHONY: man
+man:
+	@make -C $(DOCS_DIR) man
+
+install: man
 	@echo "Installing RPi-Monitor in ${TARGETDIR}"
 	@mkdir -p ${TARGETDIR}var/lib/rpimonitor
 	@cp -r src/var/lib/rpimonitor/* ${TARGETDIR}var/lib/rpimonitor/
@@ -27,11 +32,18 @@ install:
 	@cp -r src/etc/rpimonitor/* ${TARGETDIR}etc/rpimonitor/
 	@mkdir -p ${TARGETDIR}etc/cron.d
 	@cp -r src/etc/cron.d/* ${TARGETDIR}etc/cron.d/
+	@mkdir -p ${TARGETDIR}etc/snmp
+	@cp -r src/etc/snmp/* ${TARGETDIR}etc/snmp/
 	@mkdir -p ${TARGETDIR}usr/bin
 	@cp -r src/usr/bin/* ${TARGETDIR}usr/bin/
 	@mkdir -p ${TARGETDIR}usr/share/rpimonitor
 	@cp -r src/usr/share/rpimonitor/* ${TARGETDIR}usr/share/rpimonitor/
 	@echo "Startup system is ${STARTUPSYS}"
+	@mkdir -p ${TARGETDIR}usr/share/man/man1
+	@cp -r docs/build/man/rpimonitor.1 ${TARGETDIR}usr/share/man/man1/
+	@mkdir -p ${TARGETDIR}usr/share/man/man5
+	@cp -r docs/build/man/rpimonitor-*.conf.5 ${TARGETDIR}usr/share/man/man5/
+	
 ifeq (${STARTUPSYS},sysVinit)
 	@mkdir -p ${TARGETDIR}etc/init.d
 	@cp -r src/etc/init.d/* ${TARGETDIR}etc/init.d/

@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# Copyright 2013-2017 - Xavier Berger - http://rpi-experiences.blogspot.fr/
+# Copyright 2013-2018 - Xavier Berger - http://rpi-experiences.blogspot.fr/
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -26,7 +26,7 @@ $|=1;
 $SIG{CHLD}   = 'IGNORE';
 
 my $VERSION  = "{DEVELOPMENT}";
-our $verbose  = 0;
+our $loglevel  = 0;
 my $pidfile;
 
 package Configuration;
@@ -49,11 +49,12 @@ sub Debug
   my $this = shift;
   my $level = shift;
 
-  $level <= $verbose or return;
+  $level <= $loglevel or return;
   print STDERR "[", strftime("%Y/%m/%d-%H:%M:%S", localtime), "] ", "  " x ($level), (caller 1)[3], " @_\n";
 }
 
-sub ppcm{
+sub GreatestCommonDivisor
+{
   my $this=shift;
   my $a = shift;
   my $b = shift;
@@ -93,68 +94,95 @@ sub Load
   $this->{'version'} = localtime();
 
   # Load default values is not defined yet defined
-  $this->{'daemon'}->{'user'}        ||= "pi";
-  $this->{'daemon'}->{'group'}       ||= "pi";
-  $this->{'daemon'}->{'noserver'}    ||= 0;
-  $this->{'daemon'}->{'port'}        ||= 8888;
-  $this->{'daemon'}->{'addr'}        ||= '0.0.0.0';
-  $this->{'daemon'}->{'webroot'}     ||= "/usr/share/rpimonitor/web";
-  $this->{'daemon'}->{'datastore'}   ||= "/var/lib/rpimonitor";
-  $this->{'daemon'}->{'delay'}       ||= 10;
-  $this->{'daemon'}->{'timeout'}     ||= 5;
-  $this->{'daemon'}->{'sharedmemkey'}||= 20130906;
+  $this->{'daemon'}->{'user'}            ||= "pi";
+  $this->{'daemon'}->{'group'}           ||= "pi";
+  $this->{'daemon'}->{'noserver'}        ||= 0;
+  $this->{'daemon'}->{'port'}            ||= 8888;
+  $this->{'daemon'}->{'addr'}            ||= '0.0.0.0';
+  $this->{'daemon'}->{'webroot'}         ||= "/usr/share/rpimonitor/web";
+  $this->{'daemon'}->{'datastore'}       ||= "/var/lib/rpimonitor";
+  $this->{'daemon'}->{'delay'}           ||= 10;
+  $this->{'daemon'}->{'defaultinterval'} ||= 1;
+  $this->{'daemon'}->{'readonly'}        ||= 0;
+  $this->{'daemon'}->{'timeout'}         ||= 5;
+  $this->{'daemon'}->{'sharedmemkey'}    ||= 20130906;
+  $this->{'daemon'}->{'loglevel'}        ||= 0;
+  $loglevel ||= $this->{'daemon'}->{'loglevel'};
 
   # Check user and group
   $this->{'daemon'}->{'gid'} = getgrnam($this->{'daemon'}->{'group'})  || 1000;
   $this->{'daemon'}->{'uid'} = getpwnam($this->{'daemon'}->{'user'}) || 1000;
 
-  # Check rrd directory and files and create them if they are missing
-  # Create storage directory if needed
-  -d "$this->{'daemon'}->{'datastore'}/stat" or mkdir "$this->{'daemon'}->{'datastore'}/stat";
-  # Create empty file at each start
-  $this->CreateRRD( "$this->{'daemon'}->{'datastore'}/stat/empty.rrd", 'empty', 'GAUGE', 'U', 'U' );
-  chown($this->{'daemon'}->{'uid'},$this->{'daemon'}->{'gid'},"$this->{'daemon'}->{'datastore'}/stat/empty.rrd");
+  if ( ! $this->{'daemon'}->{'readonly'} ){
+    # Check rrd directory and files and create them if they are missing
+    # Create storage directory if needed
+    -d "$this->{'daemon'}->{'datastore'}/stat" or mkdir "$this->{'daemon'}->{'datastore'}/stat";
+    # Create empty file at each start
+    $this->CreateRRD( "$this->{'daemon'}->{'datastore'}/stat/empty.rrd", 'empty', 'GAUGE', 'U', 'U' );
+    chown($this->{'daemon'}->{'uid'},$this->{'daemon'}->{'gid'},"$this->{'daemon'}->{'datastore'}/stat/empty.rrd");
+  }
 
   #print Data::Dumper->Dump([$this->{'daemon'}]);
 
-  # manage rrds
-  foreach (@{$this->{'rrd'}}){
-    my @name = split (',',$_->{'name'});
-    my $type = $_->{'rrd'};
-    my $min = defined($_->{'min'}) ? $_->{'min'} : "U";
-    my $max = defined($_->{'max'}) ? $_->{'max'} : "U";
-    foreach (@name) {
-      my $filename="$this->{'daemon'}->{'datastore'}/stat/$_.rrd";
-      -f "$filename" or $this->CreateRRD($filename,$_,$type,$min,$max);
-      push(@{$this->{'rrdlist'}},"stat/$_.rrd");
+  # Load default values is not defined yet defined
+  $this->{'snmpagent'}->{'rootoid'}        ||= ".1.3.6.1.4.1";
+  $this->{'snmpagent'}->{'enterpriseoid'}  ||= 54321;
+  $this->{'snmpagent'}->{'rpimonitoroid'}  ||= 42;
+  $this->{'snmpagent'}->{'mibname'}        ||= "RPIMONITOR-MIB";
+  $this->{'snmpagent'}->{'lastupdate'}     ||= "201802030000Z";
+  $this->{'snmpagent'}->{'moduleidentity'} ||= "rpi-experiences";
+  $this->{'snmpagent'}->{'organisation'}   ||= "RPi-Monitor";
+  $this->{'snmpagent'}->{'contactionfo'}   ||= "http://rpi-experiences.blogspot.fr/";
+  $this->{'snmpagent'}->{'description'}    ||= "description";
+  $this->{'snmpagent'}->{'revision'}       ||= "201802030000Z";
+
+  if ( ! $this->{'daemon'}->{'readonly'} ){
+    # manage rrds
+    foreach (@{$this->{'rrd'}}){
+      my @name = split (',',$_->{'name'});
+      my $type = $_->{'rrd'};
+      my $min = defined($_->{'min'}) ? $_->{'min'} : "U";
+      my $max = defined($_->{'max'}) ? $_->{'max'} : "U";
+      foreach (@name) {
+        my $filename="$this->{'daemon'}->{'datastore'}/stat/$_.rrd";
+        -f "$filename" or $this->CreateRRD($filename,$_,$type,$min,$max);
+        push(@{$this->{'rrdlist'}},"stat/$_.rrd");
+      }
     }
+    #print Data::Dumper->Dump([$this->{'rrdlist'}]);
   }
 
-  #print Data::Dumper->Dump([$this->{'rrdlist'}]);
-
-  # manage page common parameters
-  $this->{'web'}->{'page'}->{'icon'}      ||= 'img/logo.png';
-  $this->{'web'}->{'page'}->{'menutitle'} ||= 'RPi-Monitor';
-  $this->{'web'}->{'page'}->{'pagetitle'} ||= 'RPi-Monitor';
+  # manage page header default parameters
+  $this->{'web'}->{'page'}->{'icon'}       ||= "img/logo.png";
+  $this->{'web'}->{'page'}->{'menutitle'}  ||= "'RPi-Monitor  <sub>('+data.hostname+')</sub>'";
+  $this->{'web'}->{'page'}->{'pagetitle'}  ||= "'RPi-Monitor ('+data.hostname+')'";
 
   # manage menu
   foreach (@{$this->{'web'}->{'status'}}) {
-    $_->{'name'} and push(@{$this->{'web'}->{'menu'}->{'status'}}, $_->{'name'});
+    $_->{'title'} and push(@{$this->{'web'}->{'menu'}->{'status'}}, $_->{'title'})
+                  or  push(@{$this->{'web'}->{'menu'}->{'status'}}, "Status");
   }
   foreach (@{$this->{'web'}->{'statistics'}}) {
-    $_->{'name'} and push(@{$this->{'web'}->{'menu'}->{'statistics'}}, $_->{'name'});
+    $_->{'title'} and push(@{$this->{'web'}->{'menu'}->{'statistics'}}, $_->{'title'})
+                  or  push(@{$this->{'web'}->{'menu'}->{'statistics'}}, "Statistics");
   }
   foreach (@{$this->{'web'}->{'addons'}}) {
-    $_->{'name'} and push(@{$this->{'web'}->{'menu'}->{'addons'}}, $_->{'name'});
+    $_->{'title'} and push(@{$this->{'web'}->{'menu'}->{'addons'}}, $_->{'title'});
   }
 
   # manage default value for dynamic data
   $this->{'maxinterval'} = 1;
   foreach (@{$this->{'dynamic'}}) {
-    $_->{'interval'} ||= 1;
+    $_->{'interval'} ||= $this->{'daemon'}->{'defaultinterval'};
     if ($_->{'interval'} > $this->{'maxinterval'} ) {
-      $this->{'maxinterval'} = $this->ppcm($this->{'maxinterval'}, $_->{'interval'});
+      $this->{'maxinterval'} = $this->GreatestCommonDivisor($this->{'maxinterval'}, $_->{'interval'});
     }
+  }
+
+  if ( $this->{'show'} ) {
+    $Data::Dumper::Indent = 1;
+    print Data::Dumper->Dump([$this]);
+    die "loglevel = $loglevel\n";
   }
 
   $this->{'sharedmem'} = IPC::ShareLite->new(
@@ -162,11 +190,6 @@ sub Load
         -create  => 'yes',
         -destroy => 'no'
     ) or die $!;
-
-  if ( $this->{'show'} ) {
-    $Data::Dumper::Indent = 1;
-    die Data::Dumper->Dump([$this]);
-  }
 }
 
 sub LoadFile
@@ -176,7 +199,7 @@ sub LoadFile
   my @dict;
   $this->Debug(3,"Loading file: $confFile");
 
-  open ( FILE, $confFile)
+  open (FILE, $confFile)
     or die "Error while openning configuration file \"$confFile\" because $!\n";
   while (<FILE>){
     chomp;
@@ -214,7 +237,8 @@ sub LoadFile
             $page=$current;
           }
           # Manage per file indexes unicity
-          if ( ($root eq "static")            ||
+          if ( ($root eq "addons")            ||
+               ($root eq "static")            ||
                ($root eq "dynamic")           ||
                ( ( ($root eq 'status' )       ||
                    ($root eq 'statistics' ) ) &&
@@ -303,67 +327,6 @@ sub new
   my $this = bless {}, shift;
   $this->Debug(2,"");
 
-  # List of files to be delivered
-  my @paths = (
-    "/",
-    "/all.json",
-    "/addons.json",
-    "/static.json",
-    "/dynamic.json",
-    "/status.json",
-    "/statistics.json",
-    "/menu.json",
-    "/friends.json",
-    "/page.json",
-    "/version.json",
-    "/favicon.ico",
-
-    "/index.html",
-    "/addons.html",
-    "/statistics.html",
-    "/status.html",
-    "/cacert.pem",
-    "/certificate.p12",
-    "/shellinabox",
-
-    "/css/rpimonitor.css",
-    "/css/bootstrap.min.css",
-
-    "/fonts/glyphicons-halflings-regular.eot",
-    "/fonts/glyphicons-halflings-regular.ttf",
-    "/fonts/glyphicons-halflings-regular.svg",
-    "/fonts/glyphicons-halflings-regular.woff",
-
-    "/stat/empty.rrd",
-
-    "/img/preloader.gif",
-
-    "/js/rpimonitor.shellinabox.js",
-    "/js/rpimonitor.statistics.js",
-    "/js/rpimonitor.status.js",
-    "/js/rpimonitor.utils.js",
-    "/js/rpimonitor.addons.js",
-    "/js/rpimonitor.index.js",
-    "/js/rpimonitor.js",
-    "/js/jsqrencode.min.js",
-    "/js/raphael.2.1.0.min.js",
-    "/js/justgage.1.0.1.min.js",
-    "/js/jquery.min.js",
-    "/js/bootstrap.min.js",
-    "/js/flot/jquery.flot.min.js",
-    "/js/flot/jquery.flot.selection.min.js",
-    "/js/flot/jquery.flot.tooltip.min.js",
-    "/js/javascriptrrd/binaryXHR.js",
-    "/js/javascriptrrd/rrdFlotMatrix.js",
-    "/js/javascriptrrd/rrdFlot.js",
-    "/js/javascriptrrd/rrdFilter.js",
-    "/js/javascriptrrd/rrdMultiFile.js",
-    "/js/javascriptrrd/rrdFile.js",
-    "/js/javascriptrrd/rrdFlotSupport.js"
-  );
-
-  $this->{'paths'} = \@paths;
-
   return $this;
 }
 
@@ -372,26 +335,8 @@ sub Debug
   my $this = shift;
   my $level = shift;
 
-  $level <= $verbose or return;
+  $level <= $loglevel or return;
   print STDERR "[", strftime("%Y/%m/%d-%H:%M:%S", localtime), "] ", "  " x ($level), (caller 1)[3], " @_\n";
-}
-
-sub ShowShellinabox
-{
-  my $this = shift;
-  my $configuration = shift;
-  my $host = shift;
-
-  if ( $configuration->{'daemon'}->{'shellinabox'} )
-  {
-    $this->SendRedirect( $configuration->{'daemon'}->{'shellinabox'} );
-  }
-  else
-  {
-    $host =~ s/:\d+//;
-    $this->SendRedirect( "https://$host:4200/" );
-  }
-  return 1;
 }
 
 sub SendFile
@@ -482,40 +427,48 @@ sub DoGET
     }
   }
 
-  # Check if requested RRD exists, if not, send empty.rrd
-  if ( $path =~ /\.rrd$/) {
-    if ( ! -f "$configuration->{'daemon'}->{'datastore'}/$path" ) {
-      $this->Debug(3, "$configuration->{'daemon'}->{'datastore'}/$path is not existing, sending empty.rrd");
-      $path = '/stat/empty.rrd';
+  if( ! $configuration->{'daemon'}->{'readonly'}) {
+    # Check if requested RRD exists, if not, send empty.rrd
+    if ( $path =~ /\.rrd$/) {
+      if ( ! -f "$configuration->{'daemon'}->{'datastore'}/$path" ) {
+        $this->Debug(3, "$configuration->{'daemon'}->{'datastore'}/$path is not existing, sending empty.rrd");
+        $path = '/stat/empty.rrd';
+        $isvalid=1;
+      }
+    }
+
+    # Check for valid addon
+    if ( $path =~ /\/addons\/(.*)\/(.*)\.(js|html|css)/ ) {
+      $path = "/addons/$1/$2.$3";
       $isvalid=1;
     }
-  }
-
-  # Check for valid addon
-  if ( $path =~ /\/addons\/(.*)\/(.*)\.(js|html|css)/ ) {
-    $path = "/addons/$1/$2.$3";
-    $isvalid=1;
   }
 
   #$isvalid or $connection->send_error(404,"<br><b>$path</b> not in <br>". join ('<br>',@{$this->{'paths'}} )) and return;
   $isvalid or $this->SendError(404);
 
-  $path =~ /shellinabox$/   and $this->ShowShellinabox( $configuration, $request->header('Host') ) and return;
   $path =~ /dynamic\.json/  and $this->SendStatus( $configuration ) and return;
-  $path =~ /([^\/]+)\.json/ and $this->SendJSON($this->{$1}) and return;
+  $path =~ /static\.json/  and $this->SendJSON($this->{'static'}) and return;
+  
+  if( ! $configuration->{'daemon'}->{'readonly'}) {
+    $path =~ /([^\/]+)\.json/ and $this->SendJSON($this->{$1}) and return;
+    
+    #If requested rrd doesn't exist, return empty.rrd
+    $path =~ /rrd$/ and ! -f "$configuration->{'daemon'}->{'datastore'}/$path" and $path="empty.rrd";
 
-  #Recreate empty rrd on demand
-  $path =~ /empty\.rrd/ and $configuration->CreateRRD( "$configuration->{'daemon'}->{'datastore'}/stat/empty.rrd", 'empty', 'GAUGE', 'U', 'U' );
+    #Recreate empty rrd on demand
+    $path =~ /empty\.rrd/ and $configuration->CreateRRD( "$configuration->{'daemon'}->{'datastore'}/stat/empty.rrd", 'empty', 'GAUGE', 'U', 'U' );
 
-  #The main page (/) is requested
-  $path =~ /^\/$/ and $path = "/index.html";
+    #The main page (/) is requested
+    $path =~ /^\/$/ and $path = "/index.html";
 
-  #Disable index page (until login screen is implemented)
-  $path =~ /index\.html/ and $path =~ s/index/status/;
+    #Disable index page (until login screen is implemented)
+    $path =~ /index\.html/ and $path =~ s/index/status/;
 
-  #If the file exists we return it
-  -f "$configuration->{'daemon'}->{'webroot'}/$path" and $this->SendFile($connection, "$configuration->{'daemon'}->{'webroot'}/$path") and return;
-  -f "$configuration->{'daemon'}->{'datastore'}/$path" and $this->SendFile($connection, "$configuration->{'daemon'}->{'datastore'}/$path") and return;
+    #If the file exists we return it
+    -f "$configuration->{'daemon'}->{'webroot'}/$path" and $this->SendFile($connection, "$configuration->{'daemon'}->{'webroot'}/$path") and return;
+    -f "$configuration->{'daemon'}->{'datastore'}/$path" and $this->SendFile($connection, "$configuration->{'daemon'}->{'datastore'}/$path") and return;
+  }
 
   $this->Debug(2,"Can't find $path");
 
@@ -530,12 +483,78 @@ sub Run
   my $monitor=shift;
   $this->Debug(3,"");
 
+  # List of files to be delivered
+  my @paths = (
+    "/static.json",
+    "/dynamic.json"
+  );
+    
+  if ( ! $configuration->{'daemon'}->{'readonly'} ) {
+    @paths = ( @paths, (
+      "/",
+      "/all.json",
+      "/addons.json",
+      "/status.json",
+      "/statistics.json",
+      "/menu.json",
+      "/friends.json",
+      "/page.json",
+      "/version.json",
+      "/favicon.ico",
+
+      "/index.html",
+      "/addons.html",
+      "/statistics.html",
+      "/status.html",
+      "/cacert.pem",
+      "/certificate.p12",
+
+      "/css/rpimonitor.css",
+      "/css/bootstrap.min.css",
+
+      "/fonts/glyphicons-halflings-regular.eot",
+      "/fonts/glyphicons-halflings-regular.ttf",
+      "/fonts/glyphicons-halflings-regular.svg",
+      "/fonts/glyphicons-halflings-regular.woff",
+
+      "/stat/empty.rrd",
+
+      "/img/preloader.gif",
+
+      "/js/rpimonitor.statistics.js",
+      "/js/rpimonitor.status.js",
+      "/js/rpimonitor.utils.js",
+      "/js/rpimonitor.addons.js",
+      "/js/rpimonitor.index.js",
+      "/js/rpimonitor.js",
+      "/js/jsqrencode.min.js",
+      "/js/raphael.2.1.0.min.js",
+      "/js/justgage.1.0.1.min.js",
+      "/js/jquery.min.js",
+      "/js/bootstrap.min.js",
+      "/js/flot/jquery.flot.min.js",
+      "/js/flot/jquery.flot.selection.min.js",
+      "/js/flot/jquery.flot.tooltip.min.js",
+      "/js/javascriptrrd/binaryXHR.js",
+      "/js/javascriptrrd/rrdFlotMatrix.js",
+      "/js/javascriptrrd/rrdFlot.js",
+      "/js/javascriptrrd/rrdFilter.js",
+      "/js/javascriptrrd/rrdMultiFile.js",
+      "/js/javascriptrrd/rrdFile.js",
+      "/js/javascriptrrd/rrdFlotSupport.js",
+      "/js/Sortable.1.6.1.min.js"
+    ));
+  }
+  $this->{'paths'} = \@paths;
+
   # Add rrds available and status file to the authorized pages
   foreach (glob("$configuration->{'daemon'}->{'webroot'}/img/*.png")){
     /(img\/.*\.png)$/;
     unshift ( @{$this->{'paths'}}, $1);
   }
-  @{$this->{'paths'}} = ( @{ $configuration->{'rrdlist'}}, @{$this->{'paths'}} );
+  if ( ! $configuration->{'daemon'}->{'readonly'} ) { 
+    $configuration->{'rrdlist'} and @{$this->{'paths'}} = ( @{ $configuration->{'rrdlist'}}, @{$this->{'paths'}} );
+  }
   $this->{'status'} = to_json(\@{$configuration->{'web'}->{'status'}});
   $this->{'statistics'} = to_json(\@{$configuration->{'web'}->{'statistics'}});
   $this->{'friends'} = to_json(\@{$configuration->{'web'}->{'friends'}});
@@ -601,7 +620,7 @@ sub Debug
   my $this = shift;
   my $level = shift;
 
-  $level <= $verbose or return;
+  $level <= $loglevel or return;
   print STDERR "[", strftime("%Y/%m/%d-%H:%M:%S", localtime), "] ", "  " x ($level), (caller 1)[3], " @_\n";
 }
 
@@ -616,40 +635,42 @@ sub Run
   my $serverpid = shift;
   $this->Debug(2,"");
 
-  if ( $configuration->{'daemon'}->{'noserver'}) {
-    # write json if server is not running
-    open(FILE, "> $configuration->{'daemon'}->{'webroot'}/static.json")
-      or warn $!;
-      print FILE to_json \%{$this->{'static'}} ;
-    close(FILE);
-    open(FILE, "> $configuration->{'daemon'}->{'webroot'}/status.json")
-      or warn $!;
-      print FILE to_json \@{$configuration->{'web'}->{'status'}} ;
-    close(FILE);
-    open(FILE, "> $configuration->{'daemon'}->{'webroot'}/page.json")
-      or warn $!;
-      print FILE to_json \%{$configuration->{'web'}->{'page'}} ;
-    close(FILE);
-    open(FILE, "> $configuration->{'daemon'}->{'webroot'}/statistics.json")
-      or warn $!;
-      print FILE to_json \@{$configuration->{'web'}->{'statistics'}} ;
-    close(FILE);
-    open(FILE, "> $configuration->{'daemon'}->{'webroot'}/friends.json")
-      or warn $!;
-      print FILE to_json(\@{$configuration->{'web'}->{'friends'}});
-    close(FILE);
-    open(FILE, "> $configuration->{'daemon'}->{'webroot'}/menu.json")
-      or warn $!;
-      print FILE to_json(\%{$configuration->{'web'}->{'menu'}});
-    close(FILE);
-    open(FILE, "> $configuration->{'daemon'}->{'webroot'}/addons.json")
-      or warn $!;
-      print FILE to_json(\@{$configuration->{'web'}->{'addons'}});
-    close(FILE);
-    open(FILE, "> $configuration->{'daemon'}->{'webroot'}/version.json")
-      or warn $!;
-      print FILE  "{\"version\":\"$configuration->{'version'}\"}";
-    close(FILE);
+  if ($configuration->{'daemon'}->{'noserver'}) {
+    if (! $configuration->{'daemon'}->{'readonly'}) {
+      # write json if server is not running
+      open(FILE, "> $configuration->{'daemon'}->{'webroot'}/static.json")
+        or warn $!;
+        print FILE to_json \%{$this->{'static'}} ;
+      close(FILE);
+      open(FILE, "> $configuration->{'daemon'}->{'webroot'}/status.json")
+        or warn $!;
+        print FILE to_json \@{$configuration->{'web'}->{'status'}} ;
+      close(FILE);
+      open(FILE, "> $configuration->{'daemon'}->{'webroot'}/page.json")
+        or warn $!;
+        print FILE to_json \%{$configuration->{'web'}->{'page'}} ;
+      close(FILE);
+      open(FILE, "> $configuration->{'daemon'}->{'webroot'}/statistics.json")
+        or warn $!;
+        print FILE to_json \@{$configuration->{'web'}->{'statistics'}} ;
+      close(FILE);
+      open(FILE, "> $configuration->{'daemon'}->{'webroot'}/friends.json")
+        or warn $!;
+        print FILE to_json(\@{$configuration->{'web'}->{'friends'}});
+      close(FILE);
+      open(FILE, "> $configuration->{'daemon'}->{'webroot'}/menu.json")
+        or warn $!;
+        print FILE to_json(\%{$configuration->{'web'}->{'menu'}});
+      close(FILE);
+      open(FILE, "> $configuration->{'daemon'}->{'webroot'}/addons.json")
+        or warn $!;
+        print FILE to_json(\@{$configuration->{'web'}->{'addons'}});
+      close(FILE);
+      open(FILE, "> $configuration->{'daemon'}->{'webroot'}/version.json")
+        or warn $!;
+        print FILE  "{\"version\":\"$configuration->{'version'}\"}";
+      close(FILE);
+    }
   }
 
   #die Data::Dumper->Dump([$this]);
@@ -742,26 +763,34 @@ sub Process
       alarm $configuration->{'daemon'}->{'timeout'};
 
       # Extract dynamic data
-      undef @_;
-      $pid = open(FEED, $file) or (@_ = split(',',$kpi->{'default'} ));
+      my @values;
+      $pid = open(FEED, $file);
       while (<FEED>){
-        /$kpi->{'regexp'}/ and (@_ = /$kpi->{'regexp'}/) or next;
-        if ( $kpi->{'postprocess'} ) {
-           @_=eval( $kpi->{'postprocess'} );
-        }
+        /$kpi->{'regexp'}/ and (@values = /$kpi->{'regexp'}/) or next;
       }
       close(FEED);
       alarm 0;
       $pid = 0;
 
-      # Set default value is no data is present
-      scalar(@_) or defined($kpi->{'default'}) and @_ = split(',',$kpi->{'default'} );
-
       # Store dynamic data
       my $i=0;
+      my @postprocess = split(',',$kpi->{'postprocess'});
+      my @default = split(',',$kpi->{'default'} );
       my @names = split(',',$kpi->{'name'});
-      foreach ( @_ ) {
-        $this->{$list}->{$names[$i]}=$_[$i];
+      foreach ( @names ) {
+        my $val = $values[$i];
+        # Post process
+        if ( defined($val) ) {
+          if ( $postprocess[$i] ) {
+            $val =~ /(.*)/;
+            $val = eval( $postprocess[$i] );
+          }
+        }
+        else {
+          # Set default value is no data is present
+          $val = $default[$i];
+        }
+        $this->{$list}->{$names[$i]}=$val;
         $i++;
       }
     };
@@ -808,66 +837,35 @@ sub Status
 
   $this->Debug(4,"\n$json");
 
-  # if embeded server is not used, we write the json file else the
-  # data are transmitted with a shared memory
-  if ( $configuration->{'daemon'}->{'noserver'} == 1 ){
+  # write current status (JSON) in shared memory
+  $configuration->{'sharedmem'}->store( $json );
+
+  # If embeded server is not used and not readonly, write the json file on disk
+  if ( ( $configuration->{'daemon'}->{'noserver'} ) 
+    && ( ! $configuration->{'daemon'}->{'readonly'} ) ){
     push (@{$this->{'files'}},"dynamic.json");
     open(FILE, "> $configuration->{'daemon'}->{'webroot'}/dynamic.json")
       or warn $!;
       print FILE $json ;
     close(FILE);
   }
-  else{
-    # write current status (JSON) in shared memory
-    $configuration->{'sharedmem'}->store( $json );
-  }
 
-  # add data in round robin database
-  #print Data::Dumper->Dump($configuration->{'rrd'});
-  foreach (@{$configuration->{'rrd'}}){
-    foreach my $name ( split(',',$_->{'name'}) ) {
-      if ( looks_like_number( $this->{'dynamic'}->{$name} ) ) {
-        RRDs::update("$configuration->{'daemon'}->{'datastore'}/stat/$name.rrd", "N:".$this->{'dynamic'}->{$name});
-      }
-      else {
-        RRDs::update("$configuration->{'daemon'}->{'datastore'}/stat/$name.rrd", "N:U");
+  if ( ! $configuration->{'daemon'}->{'readonly'} ){
+    # add data in round robin database
+    #print Data::Dumper->Dump($configuration->{'rrd'});
+    foreach (@{$configuration->{'rrd'}}){
+      foreach my $name ( split(',',$_->{'name'}) ) {
+        if ( looks_like_number( $this->{'dynamic'}->{$name} ) ) {
+          RRDs::update("$configuration->{'daemon'}->{'datastore'}/stat/$name.rrd", "N:".$this->{'dynamic'}->{$name});
+        }
+        else {
+          RRDs::update("$configuration->{'daemon'}->{'datastore'}/stat/$name.rrd", "N:U");
+        }
       }
     }
   }
 }
 
-=cut
-  Alert/Cancel are sent only when the state is stable to avoid messages flooding
-  when limit is about to be exceeded as shown in schema bellow:
-
-                          send alert
-                              ^
-    th      th <-----dh------>|        th
-    _____   __________________|______   _______           send cancel
-    |   |   |                       |   |     |              ^
-    |   |   |                       |   |     |              |
-  __|   |___|                       |___|     |______________|_____
-       tl                          tl        tl<-----dl----->
-                              |------------------------------|
-                                      Alert is raised
-
-  If alert is still active after resend period, alerte is sent again:
-
-                    send alert                                    resend alert
-                        ^                                               ^
-      th <-----dh------>|<--------------------------------------------->|
-      __________________|_______________________________________________|______
-      |
-      |
-  ____|
-       tl
-                        |------------------------------------------------------>
-                                      Alert is raised
-
-
-
-
-=cut
 sub Alert
 {
   my $this = shift;
@@ -944,7 +942,7 @@ sub Debug
   my $this = shift;
   my $level = shift;
 
-  $level <= $verbose or return;
+  $level <= $loglevel or return;
   print STDERR "[", strftime("%Y/%m/%d-%H:%M:%S", localtime), "] ", "  " x ($level), (caller 1)[3], " @_\n";
 }
 
@@ -1145,7 +1143,7 @@ sub PrintConfiguration
   $_ = $type;
   /dynamic/ and print "dynamic.$id.rrd=<Define the rrd type>\n";
   print "\n You now have to copy it into an existing configuration file or\n";
-  print " add anew file into /etc/rpimonitor/.\n";
+  print " add a new file into /etc/rpimonitor/.\n";
   print " <Note the some text require a manual update>\n";
   print " Once the configuration will be apply, restart RPi-Monitor with the\n";
   print " command: /etc/init.d/rpimonitor restart or systemctl restart rpimonitord\n";
@@ -1211,11 +1209,134 @@ sub Run
 }
 
 
+package SnmpModule;
+use strict;
+use IPC::ShareLite;
+use SNMP::Extension::PassPersist;
+use Scalar::Util qw(looks_like_number);
+use POSIX;
+use JSON;
+use Data::Dumper;
+
+sub new
+{
+  my $this = bless { }, shift;
+  $this->Debug(2,"");
+  return $this;
+}
+
+sub Debug
+{
+  my $this = shift;
+  my $level = shift;
+
+  $level <= $loglevel or return;
+  print STDERR "[", strftime("%Y/%m/%d-%H:%M:%S", localtime), "] ", "  " x ($level), (caller 1)[3], " @_\n";
+}
+
+sub GetMib()
+{
+    my $this = shift;
+    my $configuration = shift;
+
+    my $snmpagent = $configuration->{'snmpagent'};
+    my $mib = 
+      "$snmpagent->{'mibname'} DEFINITIONS ::= BEGIN\n".
+      "\n".
+      "IMPORTS\n".
+      "OBJECT-TYPE, MODULE-IDENTITY, enterprises, Integer32 ,TimeTicks\n".
+      "FROM SNMPv2-SMI\n".
+      "MODULE-COMPLIANCE,OBJECT-GROUP FROM SNMPv2-CONF;\n".
+      "\n".
+      "rpiexperiences MODULE-IDENTITY\n".
+      "LAST-UPDATED \"$snmpagent->{'lastupdate'}\"\n".
+      "ORGANIZATION \"$snmpagent->{'organisation'}\"\n".
+      "CONTACT-INFO \"$snmpagent->{'contactionfo'}\"\n".
+      "DESCRIPTION \"$snmpagent->{'description'}\"\n".
+      "REVISION \"$snmpagent->{'revision'}\"\n".
+      "DESCRIPTION \"$snmpagent->{'description'}\"\n".
+      "::={ enterprises $snmpagent->{'enterpriseoid'} }\n".
+      "\n".
+      "rpimonitor OBJECT IDENTIFIER ::= { rpiexperiences $snmpagent->{'rpimonitoroid'}}\n".
+      "";
+
+    my $snmp = $configuration->{'snmp'};
+    foreach my $key (keys %{$snmp}) {
+      ( my $name = $key ) =~ s/_//;
+      $mib .=
+        "$name OBJECT-TYPE\n".
+        "SYNTAX ".$snmp->{"$key"}->{'type'}."\n".
+        "MAX-ACCESS read-only \n".
+        "STATUS current\n".
+        "DESCRIPTION\n".
+        "\"".$snmp->{"$key"}->{'description'}."\"\n".
+        "::= { rpimonitor ".$snmp->{"$key"}->{'id'}." }\n".
+        "\n";
+    }
+ 
+    $mib .= "END\n";
+
+    print $mib;
+}
+
+sub UpdateTree 
+{
+    my ($self) = @_;
+ 
+    sub AddOid
+    {
+        my $configuration = shift;
+        my $var = shift;
+        my $key = shift;
+        
+        my $snmpagent = $configuration->{'snmpagent'};
+        my $snmp = $configuration->{'snmp'};
+        if ( $snmp->{"$key"} ){
+            my $value = $var->{$key};
+            if ( $snmp->{$key}->{'postprocess'} ) {
+                $value =~ /(.*)/;
+                $value=eval( $snmp->{$key}->{'postprocess'} );
+            }
+            $self->add_oid_entry("$snmpagent->{'rootoid'}.".
+                                  "$snmpagent->{'enterpriseoid'}.".
+                                  "$snmpagent->{'rpimonitoroid'}.".
+                                  $snmp->{$key}->{'id'}, 
+                                  $snmp->{$key}->{'type'}, 
+                                  $value);
+        }
+    }
+ 
+    my $configuration = $self->{'configuration'};
+    my $var = $self->{'static'};
+    foreach my $key (keys %{$var}) {
+        AddOid($configuration, $var, $key);
+    }
+    $var = decode_json($self->{'configuration'}->{'sharedmem'}->fetch());
+    foreach my $key (keys %{$var}) {
+        AddOid($configuration, $var, $key);
+    }
+}
+
+sub Run 
+{
+    my $this = shift;
+    my $configuration = shift;
+    my $static = shift;
+
+    my $extsnmp = SNMP::Extension::PassPersist->new(
+        backend_collect => \&UpdateTree,
+        refresh         => 10,      # refresh every 10 sec
+    );
+    $extsnmp->{'configuration'} = $configuration;
+    $extsnmp->{'static'} = $static;
+    $extsnmp->run;
+}
 
 package main;
 use strict;
 use POSIX;
 use Sys::Hostname;
+use File::Basename;
 
 sub help
 {
@@ -1225,11 +1346,11 @@ NAME
 
 USAGE
   rpimonitord [-a address][ -b pidfile][[-c configuration_file]...]
-     [-d delay][-h][-k][-l logfile][-n][-p port][-s][-t timeout]
+     [-d delay][-h][-k][-l logfile][-m][-n][-p port][-r][-s][-t timeout]
      [-v[v[...]]][-V]
 
 DESCRIPTION
-  rpimonitord is designed to extract data from Raspberry Pi system and
+  rpimonitord is designed to extract data from GNU/Linux system and
   store statistic into RRD. rpimonitord embed a web server allowing
   to display current status and statistics.
 
@@ -1242,17 +1363,19 @@ OPTIONS
   -d, --delay       Delay between check ins seconds (Default: 10)
                       Note: If you want to change the default delay, the
                       rrd file will have to be deleted rpimonitord will
-                      recreate them at next startup with the new time
-                      slice.
+                      recreate them at next startup with the new time slice.
   -h, --help        Shows this help and exit
   -i, --interactive Interactive configuration helper
   -k, --keep        Keep log file (Default: logfile is delete at each start)
-  -l, --logfile     Logfile directory and prefix (ex: /var/log/rpimonitor)
-  -n, --noserver    Don't start embeded server
+  -l, --logfile     Logfile (ex: /var/log/rpimonitor.log)
+  -m, --mib         Get MIB for current configuration
+  -n, --noserver    Don't start embeded web server
   -p, --port        Web server port (Default: 8888)
+  -r, --readonly    Read only mode. Do not generate json nor RRD. This feature 
+                    can be used to collect KPI and get them through snmp.
   -s, --show        Show configuration as loaded and exit
   -t, --timeout     KPI read timeout in seconds (Default: 5)
-  -v, --verbose     Write debug info on screen
+  -v, --verbose     Defines log level
   -V, --Version     Show version and exit
 
 CONFIGURATION
@@ -1267,6 +1390,14 @@ CONFIGURATION
   ** Warning: Be sure to use Linux filefeed format with line ending
   with LF (and not CR/LF like in Windows) **
 
+SNMP
+  RPi-Monitor can act as snmp-agent. Configuration of OIDs are done in 
+  configuration file. Refer to man page for details.
+  To add rpimonitord-snmp as snmp agent, add the following line to your 
+  snmpd.conf and configure secutiry access appropriately:
+   
+    pass_persist .1.3.6.1.4.1.54321 /usr/bin/rpimonitord-snmp
+
 RAW DATA ACCESS
   Once RPi-Monitor is started the data representing the current status
   are available in json format and can be downloaded from the root of
@@ -1279,9 +1410,9 @@ RAW DATA ACCESS
 
   The web interface configuration can also be downloaded in json format:
     statistics.json: Description of statistics page
-    status.json:    Description of status page
-    friends.json:   List of friends
-    addons.json:    List of addons
+    status.json:     Description of status page
+    friends.json:    List of friends
+    addons.json:     List of addons
 
   Statistic information are stored into RRD file available in the
   directory /var/lib/rpimonitor/stat/
@@ -1353,35 +1484,59 @@ while($_ = shift)
   /-i(nteractive)?/ and interactive() and exit;
   /-k(eep)?/        and $configuration->{'daemon'}->{'keeplogfile'}++ and next;
   /-l(ogfile)?/     and $configuration->{'daemon'}->{'logfile'} = shift and next;
+  /-m(ib)?/         and $configuration->{'getmib'}++ and last;
   /-n(oserver)?/    and $configuration->{'daemon'}->{'noserver'}++ and next;
   /-p(ort)?/        and $configuration->{'daemon'}->{'port'} = shift and next;
+  /-r(eadonly)?/    and $configuration->{'daemon'}->{'readonly'}++ and next;
   /-s(how)?/        and $configuration->{'show'}++ and next;
   /-t(imeout)?/     and $configuration->{'daemon'}->{'timeout'} = shift and next;
-  /^-([v]+)$/       and $verbose = length $1 and next;
+  /^-([v]+)$/       and $loglevel = length $1 and next;
   /-V(ersion)?/     and die "$0 version $VERSION\n";
 }
-$configuration->Load();
 
 $configuration->{'daemon'}->{'keeplogfile'} or -f $configuration->{'daemon'}->{'logfile'} and unlink $configuration->{'daemon'}->{'logfile'};
 $configuration->{'daemon'}->{'logfile'} ||= '/dev/null';
 
+if ( ! $pidfile ) {
+  if ( ! ($configuration->{'daemon'}->{'logfile'} =~ /\/dev\/null/) ){
+    open my $logfile, '>>', $configuration->{'daemon'}->{'logfile'};
+    *STDERR = $logfile;
+  }
+};
 
-$pidfile and &daemonize($configuration);
+$configuration->Load();
+
+if ($configuration->{'getmib'}) {
+  my $snmpmodule = SnmpModule->new();
+  $snmpmodule->GetMib($configuration);
+  exit;
+}
 
 my $monitor = Monitor->new();
 # Process data that should be extracted once, before the server starts
 $monitor->Process($configuration,'static');
 $monitor->{'static'}->{'hostname'} = hostname();
 
+# snmp agent 
+if ( basename($0) =~ /rpimonitord-snmp/ ) {
+  #  $Data::Dumper::Indent = 1;
+  #  print Data::Dumper->Dump([$monitor->{'static'}]);
+  my $snmpmodule = SnmpModule->new();
+  $snmpmodule->Run($configuration,$monitor->{'static'});
+  exit;
+}
+
+$pidfile and &daemonize($configuration);
+
 $SIG{INT}    = sub { stop(); }; # catch Ctrl+C
 
 my $serverpid;
 
 # Manage loglevel
-$SIG{USR1}   = sub { ($verbose < 5 ) and ++$verbose and print STDERR "[", strftime("%Y/%m/%d-%H:%M:%S", localtime), "] Change loglevel to ", $verbose ,"\n"; };
-$SIG{USR2}   = sub {  $verbose       and $verbose-- and print STDERR "[", strftime("%Y/%m/%d-%H:%M:%S", localtime), "] Change loglevel to ", $verbose ,"\n"; };
+$SIG{USR1}   = sub { ($loglevel < 5 ) and ++$loglevel and print STDERR "[", strftime("%Y/%m/%d-%H:%M:%S", localtime), "] Change loglevel to ", $loglevel ,"\n"; };
+$SIG{USR2}   = sub {  $loglevel       and $loglevel-- and print STDERR "[", strftime("%Y/%m/%d-%H:%M:%S", localtime), "] Change loglevel to ", $loglevel ,"\n"; };
 
-print STDERR "[", strftime("%Y/%m/%d-%H:%M:%S", localtime), "] ", "RPi-Monitor has been started\n";
+print STDERR "[", strftime("%Y/%m/%d-%H:%M:%S", localtime), "] ", "RPi-Monitor has been started with loglevel set to $loglevel\n";
 print STDERR "                      Log level can be increased or decreased during runtime\n";
 print STDERR "                      by sending signal USR1 or USR2 with the command killall -USRx rpimonitord\n";
 

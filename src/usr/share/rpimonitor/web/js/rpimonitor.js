@@ -1,6 +1,6 @@
 // This file is part of RPi-Monitor project
 //
-// Copyright 2013 - 2015 - Xavier Berger - http://rpi-experiences.blogspot.fr/
+// Copyright 2013 - Xavier Berger - http://rpi-experiences.blogspot.fr/
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -64,7 +64,7 @@ function ShowFriends(){
   if ( data.length > 0 ) {
     $('#friends').empty();
     for (var i = 0; i < data.length; i++) {
-      $('#friends').append('<li><a href="'+data[i].link+'">'+data[i].name+'</a></li>');
+      $('#friends').append('<li><a href="'+data[i].link+'">'+eval(data[i].title)+'</a></li>');
     }
     $('#divfriends').removeClass('hide');
   }
@@ -151,8 +151,12 @@ function AddDialogs(){
       '</div>'+
       '<div class="modal-body">'+
       '<p><b>Version</b>: {DEVELOPMENT} '+
-      '<b>by</b> Xavier Berger <a href="http://rpi-experiences.blogspot.fr/">Blog</a> <a href="https://github.com/XavierBerger/RPi-Monitor">GitHub</a></p>'+
+      '<b>by</b> Xavier Berger</p>'+
       'With the contribution of users sharing ideas and competences on Github.'+
+      '<br>'+
+      '<a href="http://rpi-experiences.blogspot.fr/">Blog</a>'+' - '+
+      '<a href="https://github.com/XavierBerger/RPi-Monitor">GitHub</a>'+' - '+
+      '<a href="https://xavierberger.github.io/RPi-Monitor-docs/index.html">Documentation</a>'+
       '<hr>'+
       '<p><b>RPi-Monitor</b> is free software developed on top of other open source '+
         'tools: <a href="http://twitter.github.io/bootstrap/">bootstrap</a>, <a href="http://jquery.com/">jquery</a>, <a href="https://code.google.com/p/jsqrencode/">jsqrencode</a>, <a href="http://javascriptrrd.sourceforge.net/">javascriptrrd</a> and <a href="http://www.flotcharts.org/">Flot</a>.<br>'+
@@ -199,7 +203,7 @@ function AddTopmenu(){
       '<span class="icon-bar"></span>' +
       '<span class="icon-bar"></span>' +
       '</button>' +
-      '<a class="navbar-brand" href="index.html"><img src="'+icon+'"> &nbsp;'+menutitle+'</a>' +
+      '<a class="navbar-brand" href="index.html"><img height="20" src="'+icon+'"> &nbsp;'+menutitle+'</a>' +
     '</div>' +
     '<div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">' +
       '<ul class="nav navbar-nav">' +
@@ -212,13 +216,13 @@ function AddTopmenu(){
         '<ul class="dropdown-menu" role="menu">' +
         '<li class="dropdown-header"> <b>RPi-Monitor</b></li>'+
         '<li><a href="#" title="Scan this qrcode to reach this page from your smartphone or tablet"><canvas id="qrcanv"><a></li>'+
-        '<li><a href="http://rpi-experiences.blogspot.fr/p/rpi-monitor-faq.html" data-toggle="modal">Help</a></li>'+
         '<li><a href="#License" data-toggle="modal">License</a></li>'+
         '<li><a href="#About" data-toggle="modal">About</a></li>'+
         '<li class="divider"></li>'+
         '<li class="dropdown-header"> <b>Related links</b></li>'+
+        '<li><a href="https://xavierberger.github.io/RPi-Monitor-docs/index.html" data-toggle="modal">Documentation</a></li>'+
         '<li><a href="http://rpi-experiences.blogspot.fr/">RPi-Experiences</a></li>'+
-        '<li><a href="https://github.com/XavierBerger/RPi-Monitor">RPi-Monitor</a></li>'+
+        '<li><a href="https://github.com/XavierBerger/RPi-Monitor">RPi-Monitor on GitHub</a></li>'+
         '</ul>' +
       '</li>' +
       '</ul>' +
@@ -266,11 +270,15 @@ function UpdateMenu(){
   }
 
   var data = getData('menu');
+  if ( data.status == undefined ) {
+    $('#statusmenu').addClass('hide');
+  }
+  else{
   if ( data.status.length > 1 ){
     $('#statusmenu').addClass('dropdown');
     var dropDownMenu='<ul class="dropdown-menu">';
     for ( var iloop=0; iloop < data.status.length; iloop++){
-      dropDownMenu+='<li><a href="status.html?activePage='+iloop+'">'+data.status[iloop]+'</a></li>';
+      dropDownMenu+='<li><a href="status.html?activePage='+iloop+'">'+eval(data.status[iloop])+'</a></li>';
     }
     dropDownMenu+='</ul>';
     $('#statuslink').html( 'Status <b class="caret"></b>')
@@ -279,11 +287,17 @@ function UpdateMenu(){
     $('#statuslink').attr('data-toggle','dropdown');
     $('#statuslink').attr('href','#');
   }
+  }
+
+  if ( data.statistics == undefined ) {
+    $('#statisticsmenu').addClass('hide');
+  }
+  else {
   if ( data.statistics.length > 1 ){
     $('#statisticsmenu').addClass('dropdown');
     var dropDownMenu='<ul class="dropdown-menu">';
     for ( var iloop=0; iloop < data.statistics.length; iloop++){
-      dropDownMenu+='<li><a href="statistics.html?activePage='+iloop+'">'+data.statistics[iloop]+'</a></li>';
+      dropDownMenu+='<li><a href="statistics.html?activePage='+iloop+'">'+eval(data.statistics[iloop])+'</a></li>';
     }
     dropDownMenu+='</ul>';
     $('#statisticslink').html( 'Statistics <b class="caret"></b>')
@@ -291,18 +305,19 @@ function UpdateMenu(){
     $('#statisticslink').addClass('dropdown-toggle');
     $('#statisticslink').attr('data-toggle','dropdown');
     $('#statisticslink').attr('href','#');
+    }
   }
 
   if ( data.addons != undefined ) {
     if ( data.addons.length > 0 ){
       $('#addonsmenu').removeClass('hide');
-      $('#addonslink').html(data.addons[0]);
+      $('#addonslink').html(eval(data.addons[0]));
     }
     if ( data.addons.length > 1 ){
       $('#addonsmenu').addClass('dropdown');
       var dropDownMenu='<ul class="dropdown-menu">';
       for ( var iloop=0; iloop < data.addons.length; iloop++){
-        dropDownMenu+='<li><a href="addons.html?activePage='+iloop+'">'+data.addons[iloop]+'</a></li>';
+        dropDownMenu+='<li><a href="addons.html?activePage='+iloop+'">'+eval(data.addons[iloop])+'</a></li>';
       }
       dropDownMenu+='</ul>';
       $('#addonslink').html( 'Add-ons <b class="caret"></b>')
